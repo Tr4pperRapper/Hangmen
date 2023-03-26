@@ -172,6 +172,9 @@ falseletters = []
 word = ""
 data = {"username": "Guest", "singleplayer": {"wins": 0, "loses": 0}}
 
+#Server variables
+messages = []
+members = -1
 
 #Clear function
 def clear():
@@ -414,12 +417,15 @@ def send_message(sn, msg):
 
 
 def game_lobby_template(sn):
+  global members
   clear()
   print("The hangmen - Multiplayer - Game lobby")
-  print("\nWelcome to the room: {}\n".format(sn))
+  print("\nWelcome to the room:", sn)
+  print("Players waiting:", members, "\n")
   print("Whenever you want to start the game just send \"start game\"\n")
   print("\nChat Section:")
-
+  for msg in messages:
+    print(msg)
 
 #Game Lobby - Before start of the game
 def game_lobby(sn):
@@ -428,18 +434,31 @@ def game_lobby(sn):
     msg = ""
     while msg == "":
       msg = input()
-      send_message(sn, msg)
+      if msg != "leave":
+        send_message(sn, msg)
+      else:
+        leave_game(sn)
   start_game(sn, 1)
 
 
 #Confirm game creation by Server
 def game_created(sn):
+  global members
+  members = 1
   game_lobby(sn)
 
 
+def reload_template(res,t):
+  if t == 0:
+    clear()
+    messages.append(str(res["data"]["username"], ": ", res["data"]["message"]))
+    game_lobby_template(res["data"]["sn"])
+  elif t == 1:
+    return
+
 #Receive from Server
 def receive_from_server():
-  global server
+  global server,members,data
   while True:
     res = json.loads((server.recv(4096)).decode())
     print(res)
@@ -447,12 +466,23 @@ def receive_from_server():
       print(res["status"])
       if res["status"] == 201:
         game_created(res["data"]["servername"])
-      continue
     elif res["type"] == "sendmessage":
       if res["status"] == 200:
-        print("\n", res["data"]["username"], ": ", res["data"]["message"])
-      continue
-
+        reload_template(res,0)
+    elif res["type"] == "connectgame":
+      if res["status"] == 200:
+        members = res["data"]["members"]
+        if res["data"]["username"] == data["username"]:
+          game_lobby(res["data"]["servername"])
+        else:
+          reload_template(res,0)
+    elif res["type"] == "disconnectgame":
+      if res["status"] == 200:
+        members = res["data"]["members"]
+        if res["data"]["username"] == data["username"]:
+          menu()
+        else:
+          reload_template(res,0)
 
 #Send over to Server data
 def send_to_server(un, d, type):
@@ -466,6 +496,16 @@ def send_to_server(un, d, type):
       "username": un,
       "servername": d["sn"],
       "serverpassword": d["sp"]
+      }
+    }).encode())
+  elif type == "disconnectgame":
+    d = json.loads(d)
+    server.send(
+      json.dumps({
+      "type": type,
+      "data": {
+      "username": un,
+      "servername": d["sn"],
       }
     }).encode())
   elif type == "sendmessage":
@@ -525,7 +565,15 @@ def join_game():
                    "sn": servername,
                    "sp": serverpassword
                  }), "connectgame")
-
+#Leave game - From room
+def leave_game(servername):
+  global data
+  send_to_server(data["username"],
+                 json.dumps({
+                   "sn": servername,
+                 }), "disconnectgame")
+  menu()
+  
 
 def stats():
   global data

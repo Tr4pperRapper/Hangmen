@@ -38,25 +38,36 @@ def create_game(sock, un, sn, sp, t):
   games.append({
     "creatorname": un,
     "servername": sn,
-    "serverpassowrd": sp,
+    "serverpassword": sp,
     "clients": [sock]
   })
-  return json.dumps({"status": 201, "type": t, "data": {"servername": sn}})
+  print(games)
+  return json.dumps({"status": 201, "type": t, "data": {"username": list_of_clients[sock]["username"], "servername": sn}})
 
-
-def join_game(un, sn, sp, t):
-  print("game:", gametemplate[{"servername": sn, "serverpassowrd": sp}])
-  if gametemplate[{"servername": sn, "serverpassowrd": sp}]:
-    return json.dumps({"status": 200, "type": t, "data": {"servername": sn}})
-  else:
-    return json.dumps({"status": 404, "type": t, "data": {"servername": sn}})
+def join_game(sock,un, sn, sp, t):
+  for game in games:
+    if game["servername"] == sn and game["serverpassword"] == sp:
+      game["clients"].append(sock)
+      return json.dumps({"status": 200, "type": t, "data": {"username": list_of_clients[sock]["username"], "servername": sn, "members": len(game["clients"])}})
+  return json.dumps({"status": 404, "type": t, "data": {"username": list_of_clients[sock]["username"], "servername": sn}})
   
-def send_message(un, msg, t):
+def leave_game(sock,un, sn, t):
+  for game in games:
+    if game["servername"] == sn:
+      game["clients"].remove(sock)
+      if len(game["clients"]) < 1:
+        games.remove(game)
+      print(games)
+      return json.dumps({"status": 200, "type": t, "data": {"username": list_of_clients[sock]["username"], "servername": sn, "members": len(game["clients"])}})
+  return json.dumps({"status": 404, "type": t, "data": {"username": list_of_clients[sock]["username"], "servername": sn}})
+    
+def send_message(un, sn, msg, t):
     return json.dumps({
             "status": 200,
             "type": t,
             "data": {
               "username": un,
+              "servername": sn,
               "message": msg
             }
           })
@@ -67,6 +78,7 @@ def broadcast(message, room, connection, t):
   print("a")
   if t == 0:
     try:
+      print(list_of_clients[connection])
       connection.send(message.encode())
     except:
       connection.close()
@@ -86,8 +98,7 @@ def broadcast(message, room, connection, t):
 
 def remove(connection):
   if connection in list_of_clients:
-    list_of_clients.remove(connection)
-
+    del list_of_clients[connection]
 
 def clientthread(conn):
   # sends a message to the client whose user object is conn
@@ -105,18 +116,24 @@ def clientthread(conn):
                           msg["data"]["serverpassword"], msg["type"])
         broadcast(res, msg["data"]["servername"], conn, 0)
       elif msg["type"] == "connectgame":
-        res = join_game(msg["data"]["username"], msg["data"]["servername"],
+        res = join_game(conn,msg["data"]["username"], msg["data"]["servername"],
                         msg["data"]["serverpassword"], msg["type"])
         broadcast(res, msg["data"]["servername"], conn, 1)
+      elif msg["type"] == "disconnectgame":
+        res = leave_game(conn,msg["data"]["username"], msg["data"]["servername"],
+                        msg["type"])
+        broadcast(res, msg["data"]["servername"], conn, 1)
       elif msg["type"] == "sendmessage":
-        res = send_message(msg["data"]["username"],msg["data"]["message"],msg["type"])
+        res = send_message(msg["data"]["username"],msg["data"]["servername"],msg["data"]["message"],msg["type"])
         print(res)
         broadcast(res, msg["data"]["servername"], conn, 1)
       else:
         remove(conn)
     except Exception as e:
       print("exception", e)
-      continue
+      conn.close()
+      remove(conn)
+      return
 
 while True:
   conn, addr = server.accept()
