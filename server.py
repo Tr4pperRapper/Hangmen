@@ -79,7 +79,7 @@ def broadcast(message, room, connection, t):
   if t == 0:
     try:
       print(list_of_clients[connection])
-      connection.send(message.encode())
+      connection.sendall(message.encode())
     except:
       connection.close()
       remove(connection)
@@ -90,7 +90,7 @@ def broadcast(message, room, connection, t):
         print(list_of_clients[client], list_of_clients[connection])
         try:
           print("just send", message)
-          client.send(message.encode())
+          client.sendall(message.encode())
         except:
           client.close()
           remove(client)

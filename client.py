@@ -1,3 +1,6 @@
+#All of necessary data exists in this one file. If you want to read the code with more clarity then just minimize the dictionairy topicswords. I did this because I didn't want to include other files
+#The multiplayer feature is seriously coming out 1st of April I just need to figure out one issue and the rest are already there
+
 import json
 import os
 import random
@@ -7,10 +10,12 @@ import sys
 import threading
 
 
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-IP_address = "localhost"
-Port = 8888
-server.connect((IP_address, Port))
+
+#server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#IP_address = "localhost"
+#Port = 8888
+#server.connect((IP_address, Port))
+active = 0
 
 firstTime = 1
 started = 0
@@ -456,33 +461,52 @@ def reload_template(res,t):
   elif t == 1:
     return
 
+def get_msg(buffer):
+        global server
+        while not '\n' in buffer:
+            data = server.recv(4096)
+            if not data:
+                return ''
+            buffer += data
+        sentinel = buffer.index('\n') + 1
+        msg,buffer = buffer[:sentinel],buffer[sentinel:]
+        return msg
+
 #Receive from Server
 def receive_from_server():
   global server,members,data
+  res = ""
+  #Issue with buffering information. For some reason the information is not buffered although transmited succesfully from server
   while True:
-    res = json.loads((server.recv(4096)).decode())
-    print(res)
-    if res["type"] == "hostgame":
-      print(res["status"])
-      if res["status"] == 201:
-        game_created(res["data"]["servername"])
-    elif res["type"] == "sendmessage":
-      if res["status"] == 200:
-        reload_template(res,0)
-    elif res["type"] == "connectgame":
-      if res["status"] == 200:
-        members = res["data"]["members"]
-        if res["data"]["username"] == data["username"]:
-          game_lobby(res["data"]["servername"])
-        else:
+    buffer = (server.recv(4096))
+    if len(buffer) != 0:
+      print(buffer)
+      res = res + buffer
+    else:
+      res = json.loads((buffer).decode())
+      print(res)
+      if res["type"] == "hostgame":
+        print(res["status"])
+        if res["status"] == 201:
+          game_created(res["data"]["servername"])
+      elif res["type"] == "sendmessage":
+        if res["status"] == 200:
           reload_template(res,0)
-    elif res["type"] == "disconnectgame":
-      if res["status"] == 200:
-        members = res["data"]["members"]
-        if res["data"]["username"] == data["username"]:
-          menu()
-        else:
-          reload_template(res,0)
+      elif res["type"] == "connectgame":
+        if res["status"] == 200:
+          members = res["data"]["members"]
+          if res["data"]["username"] == data["username"]:
+            game_lobby(res["data"]["servername"])
+          else:
+            reload_template(res,0)
+      elif res["type"] == "disconnectgame":
+        if res["status"] == 200:
+          members = res["data"]["members"]
+          if res["data"]["username"] == data["username"]:
+            menu()
+          else:
+            reload_template(res,0)
+      res = ""      
 
 #Send over to Server data
 def send_to_server(un, d, type):
@@ -624,9 +648,10 @@ def settings():
 #Exit - From menu
 def exit():
   clear()
-  server.close()
+  if active == 1:
+    server.close()
   print("Exiting..")
-
+  sys.exit()
 
 #Game settings
 def game_settings(t):
@@ -713,19 +738,31 @@ def singleplayer_menu():
 
 #Multiplayer menu
 def multiplayer_menu():
-  global data
-  send_to_server(data["username"], "", "connect")
-  clear()
-  print("The hangmen - Multiplayer\n")
-  print("1. Create a game")
-  print("2. Join a game")
-  print("3. Back")
+  if active == 1:
+    global data
+    send_to_server(data["username"], "", "connect")
+    clear()
+    print("The hangmen - Multiplayer\n")
+    print("1. Create a game")
+    print("2. Join a game")
+    print("3. Back")
+    ans = input()
+    if ans == "1":
+      create_game()
+    elif ans == "2":
+      join_game()
+    elif ans == "3":
+      menu()
+    else:
+      print("Invalid option\n")
+      multiplayer_menu()
+  elif active == 0:
+    clear()
+    print("The hangmen - Multiplayer\n")
+    print("Feature rolling out 1st of April")
+    print("1. Back")
   ans = input()
   if ans == "1":
-    create_game()
-  elif ans == "2":
-    join_game()
-  elif ans == "3":
     menu()
   else:
     print("Invalid option\n")
@@ -767,6 +804,17 @@ if firstTime == 1:
   firstTime = 0
   save_data()
 
-receive_thread = threading.Thread(target=receive_from_server)
-receive_thread.start()
-menu()
+if active == 1:
+  receive_thread = threading.Thread(target=receive_from_server)
+  receive_thread.start()  
+
+
+try:
+  menu()
+except KeyboardInterrupt:
+        clear()
+        print('Ctrl + C just pressed, exiting...')
+        try:
+            sys.exit(130)
+        except SystemExit:
+            os._exit(130)
